@@ -1,0 +1,32 @@
+version: "3"
+services:
+  db:
+    image: postgres:latest
+    container_name: db
+    environment:
+      POSTGRES_PASSWORD: actpro-123
+      POSTGRES_USER: todo_user
+      POSTGRES_DB: todo_db
+    volumes:
+      - db-data:/var/lib/postgresql/data
+    ports:
+      - 5432:5432
+    restart: always
+
+  todo:
+    image: app-todo:2.1
+    container_name: todo
+    depends_on:
+      - db
+    # ports:
+    #   - 3000:3000
+    links:
+      - db
+    # restart: always
+
+volumes:
+  db-data:
+#    external: true
+
+
+

@@ -1,0 +1,25 @@
+version: "2.4"
+services:
+  todo:
+    image: todo
+    container_name: todo
+    ports:
+      - 3000:3000
+    restart: always
+
+  proxy:
+    image: proxy
+    container_name: proxy
+    depends_on:
+      - todo
+    ports:
+      - 80:80
+    links:
+      - todo
+    healthcheck:
+      test: curl -sS http://127.0.0.1 || echo 1
+      interval: 10s
+      timeout: 5s
+      retries: 3  
+    restart: always
+
