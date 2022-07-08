@@ -1,0 +1,80 @@
+stages:
+  - test
+  - build
+  - deploy
+  - production
+
+variables:
+  SERVER_PROD: 15.188.119.117
+
+# Подлючаем шаблон для проверки кода SAST
+# Gitlab сам определит какой язык используются и запустит задачу в нашем случае для nodejs
+#include:
+#  template: Jobs/SAST.gitlab-ci.yml
+
+# Указываем на какой стейдже должне запуститься SAST тест
+#sast:
+#  stage: test
+
+
+# Мы собираем образ на раннере с shell, поэтому заранее необходимо поставить там docker engine 
+build_image:
+  stage: build
+  tags:
+   - aws-shell
+  script:
+ # Собираем образ в наш репозиторий и добавляем ему версионность в виде тега 1.0
+ # команда для того есть в нашем gitlab registry
+    - docker build -t registry.gitlab.com/jeka4el/actpro-devops-04.22:1.0 .
+
+
+push_image:
+  stage: build
+  tags:
+   - aws-shell
+# Говорим чтобы эта джоба не выполнялась параллейно, а подождала пока собирается наш образ из джобы выше
+  needs:
+    - build_image
+# Т.к. мы хотим запушить образ в приватный репозиторий, нам нужно сначала залогиниться
+# Но этого мало, нам нужен еще предоставить логин и пароль, сделаем это через предопределенные переменные гитлаба   
+  before_script:
+    - docker login -u $CI_REGISTRY_USER -p $CI_REGISTRY_PASSWORD registry.gitlab.com  
+# Пушим созданный образ в докер репозиторий гитлаба (не забываем указать тег)
+  script:
+    - docker push registry.gitlab.com/jeka4el/actpro-devops-04.22:1.0
+
+
+deploy_to_dev:
+  tags:
+    - aws-shell
+  stage: deploy
+  before_script:
+    - chmod 400 $SSH_KEY
+    - scp -o StrictHostKeyChecking=no -i $SSH_KEY ./docker-compose.yaml ubuntu@35.180.169.255:/home/ubuntu
+  script:
+# Запускаем контейнер использую ssh подлючение - отменяем проверку рукопожатия и используем переменнуд для ключа  
+# Для исключения конфликта запущенных контейнеров сначало удалим все контейнеры и только потом запустим новые
+# Docker-compose должен быть установлен на сервере
+    - ssh -o StrictHostKeyChecking=no -i $SSH_KEY ubuntu@35.180.169.255 "
+        docker login -u $CI_REGISTRY_USER -p $CI_REGISTRY_PASSWORD registry.gitlab.com &&
+        docker-compose -f docker-compose.yaml down &&
+        docker-compose -f docker-compose.yaml up -d" 
+
+
+deploy_to_prod:
+  tags:
+    - aws-shell
+  stage: production
+  when: manual
+
+  before_script:
+    - chmod 400 $SSH_KEY
+    - scp -o StrictHostKeyChecking=no -i $SSH_KEY ./docker-compose.yaml ubuntu@$SERVER_PROD:/home/ubuntu
+  script:
+# Запускаем контейнер использую ssh подлючение - отменяем проверку рукопожатия и используем переменнуд для ключа  
+# Для исключения конфликта запущенных контейнеров сначало удалим все контейнеры и только потом запустим новые
+# Docker-compose должен быть установлен на сервере
+    - ssh -o StrictHostKeyChecking=no -i $SSH_KEY ubuntu@$SERVER_PROD "
+        docker login -u $CI_REGISTRY_USER -p $CI_REGISTRY_PASSWORD registry.gitlab.com &&
+        docker-compose -f docker-compose.yaml down &&
+        docker-compose -f docker-compose.yaml up -d" 
